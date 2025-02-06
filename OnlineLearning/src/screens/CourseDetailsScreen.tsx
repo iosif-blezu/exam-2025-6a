@@ -34,13 +34,13 @@ const CourseDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
   const loadCourse = async () => {
     setLoading(true);
     try {
-      // Try to load from cache first.
+      // Check if the course is already in cache.
       const cached = await AsyncStorage.getItem(`course-${id}`);
       if (cached) {
         setCourse(JSON.parse(cached));
         console.log('Loaded course from cache.');
       } else {
-        // If not in cache, fetch from the server and cache it.
+        // If not, fetch from the server and store it in cache.
         const data = await fetchCourseById(id);
         setCourse(data);
         await AsyncStorage.setItem(`course-${id}`, JSON.stringify(data));
@@ -84,11 +84,12 @@ const CourseDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
     ]);
   };
 
+  // Only load the course if the screen is focused and the course is not already loaded.
   useEffect(() => {
-    if (isFocused) {
+    if (isFocused && !course) {
       loadCourse();
     }
-  }, [isFocused]);
+  }, [isFocused, course]);
 
   if (loading || !course) return <LoadingIndicator />;
 

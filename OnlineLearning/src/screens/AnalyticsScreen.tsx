@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, FlatList, Text, StyleSheet, Alert } from 'react-native';
+import { View, FlatList, Text, StyleSheet, Alert, RefreshControl } from 'react-native';
 import { fetchAllCourses } from '../api/api';
 import LoadingIndicator from '../components/LoadingIndicator';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { courseEventEmitter } from '../events/CourseEventEmitter';
 
 type Course = {
   id: number;
@@ -14,17 +16,20 @@ type Course = {
 const AnalyticsScreen: React.FC = () => {
   const [topCourses, setTopCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const loadAnalytics = async () => {
     setLoading(true);
     try {
       const data = await fetchAllCourses();
-      // Sort by status (ascending) and then enrolled students (descending)
+      // Sort courses by status (ascending) and then by enrolled students (descending)
       const sorted = data.sort((a: Course, b: Course) => {
         if (a.status === b.status) return b.students - a.students;
         return a.status.localeCompare(b.status);
       });
       setTopCourses(sorted.slice(0, 5));
+      // Optionally update the cache
+      await AsyncStorage.setItem('courses', JSON.stringify(data));
     } catch (error) {
       Alert.alert('Error', 'Failed to load analytics.');
     } finally {
@@ -32,8 +37,24 @@ const AnalyticsScreen: React.FC = () => {
     }
   };
 
+  // Initial load on mount.
   useEffect(() => {
     loadAnalytics();
+  }, []);
+
+  // Subscribe to events—here, on any addition or deletion, we re-load analytics.
+  useEffect(() => {
+    const onCourseChange = () => {
+      loadAnalytics();
+    };
+
+    courseEventEmitter.on('courseAdded', onCourseChange);
+    courseEventEmitter.on('courseDeleted', onCourseChange);
+
+    return () => {
+      courseEventEmitter.off('courseAdded', onCourseChange);
+      courseEventEmitter.off('courseDeleted', onCourseChange);
+    };
   }, []);
 
   const renderItem = ({ item }: { item: Course }) => (
@@ -45,11 +66,20 @@ const AnalyticsScreen: React.FC = () => {
     </View>
   );
 
-  if (loading) return <LoadingIndicator />;
-
   return (
     <View style={styles.container}>
-      <FlatList data={topCourses} keyExtractor={(item) => item.id.toString()} renderItem={renderItem} />
+      {loading ? (
+        <LoadingIndicator />
+      ) : (
+        <FlatList
+          data={topCourses}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderItem}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={loadAnalytics} />
+          }
+        />
+      )}
     </View>
   );
 };
