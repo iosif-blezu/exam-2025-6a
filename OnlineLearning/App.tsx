@@ -53,8 +53,8 @@ export default function App() {
               });
             })
             .catch((err) => console.error("Failed to fetch course by id", err));
-          setToastMsg(`New course added!`);
-        }
+            setToastMsg(`New course added: ${data.name} by ${data.instructor}. ${data.description}`);
+          }
       } catch (error) {
         console.error('WebSocket message error:', error);
       }
