@@ -5,6 +5,9 @@ import InstructorStack from './src/screens/InstructorStack';
 import StudentScreen from './src/screens/StudentScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import Toast from './src/components/Toast';
+import { courseEventEmitter } from './src/events/CourseEventEmitter';
+import { fetchCourseById } from './src/api/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Tab = createBottomTabNavigator();
 
@@ -21,8 +24,37 @@ export default function App() {
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        const { name, instructor, description } = data;
-        setToastMsg(`New Course: ${name} by ${instructor}\n${description}`);
+        console.log("Received WS message:", data);
+
+        // Check for a deletion event in one of two ways:
+        // 1. If the message has an action field set to "delete"
+        // 2. Or, if it lacks a 'name' property (which a full course addition would include)
+        if ((data.action && data.action === 'delete') || (!data.name && data.id)) {
+          const deletedId = Number(data.id);
+          AsyncStorage.getItem('courses').then((coursesStr) => {
+            const courses = coursesStr ? JSON.parse(coursesStr) : [];
+            const updatedCourses = courses.filter((c: any) => c.id !== deletedId);
+            AsyncStorage.setItem('courses', JSON.stringify(updatedCourses));
+            courseEventEmitter.emit('courseDeleted', deletedId);
+          });
+          setToastMsg(`Course deleted!`);
+        } else {
+          // Otherwise, treat this as an addition event.
+          const newCourseId = Number(data.id);
+          fetchCourseById(newCourseId)
+            .then((newCourse) => {
+              AsyncStorage.getItem('courses').then((coursesStr) => {
+                const courses = coursesStr ? JSON.parse(coursesStr) : [];
+                if (!courses.some((c: any) => c.id === newCourse.id)) {
+                  courses.push(newCourse);
+                  AsyncStorage.setItem('courses', JSON.stringify(courses));
+                  courseEventEmitter.emit('courseAdded', newCourse);
+                }
+              });
+            })
+            .catch((err) => console.error("Failed to fetch course by id", err));
+          setToastMsg(`New course added!`);
+        }
       } catch (error) {
         console.error('WebSocket message error:', error);
       }

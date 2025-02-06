@@ -34,14 +34,21 @@ const CourseDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
   const loadCourse = async () => {
     setLoading(true);
     try {
-      const data = await fetchCourseById(id);
-      setCourse(data);
-      await AsyncStorage.setItem(`course-${id}`, JSON.stringify(data));
+      // Try to load from cache first.
+      const cached = await AsyncStorage.getItem(`course-${id}`);
+      if (cached) {
+        setCourse(JSON.parse(cached));
+        console.log('Loaded course from cache.');
+      } else {
+        // If not in cache, fetch from the server and cache it.
+        const data = await fetchCourseById(id);
+        setCourse(data);
+        await AsyncStorage.setItem(`course-${id}`, JSON.stringify(data));
+        console.log('Fetched course from server and cached.');
+      }
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Failed to load course details. Using cached data.');
-      const cached = await AsyncStorage.getItem(`course-${id}`);
-      if (cached) setCourse(JSON.parse(cached));
+      Alert.alert('Error', 'Failed to load course details.');
     } finally {
       setLoading(false);
     }
@@ -55,6 +62,17 @@ const CourseDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
         onPress: async () => {
           try {
             await deleteCourse(id);
+            // Remove the individual course cache.
+            await AsyncStorage.removeItem(`course-${id}`);
+
+            // Update the courses list cache by removing the deleted course.
+            const coursesStr = await AsyncStorage.getItem('courses');
+            if (coursesStr) {
+              const courses = JSON.parse(coursesStr);
+              const updatedCourses = courses.filter((c: Course) => c.id !== id);
+              await AsyncStorage.setItem('courses', JSON.stringify(updatedCourses));
+            }
+
             Alert.alert('Success', 'Course deleted');
             navigation.goBack();
           } catch (error: any) {
@@ -67,7 +85,9 @@ const CourseDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
   };
 
   useEffect(() => {
-    if (isFocused) loadCourse();
+    if (isFocused) {
+      loadCourse();
+    }
   }, [isFocused]);
 
   if (loading || !course) return <LoadingIndicator />;
